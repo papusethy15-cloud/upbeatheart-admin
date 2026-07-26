@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Cache
+.vite/
+.cache/
+.eslintcache
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup
+*.bak
+*.tmp
+*.temp
+
+# Firebase
+firebase-debug.log
+.firebase/
