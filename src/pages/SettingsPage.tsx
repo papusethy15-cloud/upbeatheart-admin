@@ -229,6 +229,17 @@ async function loadSettings(): Promise<SiteSettings> {
 
 async function saveSettings(data: Partial<SiteSettings>, uid: string) {
   await setDoc(doc(db, 'settings', 'site'), { ...data, updatedAt: serverTimestamp(), updatedBy: uid }, { merge: true })
+
+  // ── On-demand ISR bust ────────────────────────────────────────────────
+  // Tell the Next.js website to immediately invalidate its settings cache
+  // so every page (About, Contact, FAQ, Home, etc.) reflects the new data
+  // on the very next visitor request — without waiting for ISR TTL.
+  const websiteUrl = import.meta.env.VITE_WEBSITE_URL || 'https://upbeatheart.com'
+  const secret     = import.meta.env.VITE_REVALIDATE_SECRET || ''
+  fetch(`${websiteUrl}/api/revalidate`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${secret}` },
+  }).catch(() => { /* silent — revalidation is best-effort; ISR TTL is the fallback */ })
 }
 
 // ─── Shared UI atoms ──────────────────────────────────────────────────────────
