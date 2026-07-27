@@ -47,7 +47,10 @@ const CLOUD_NAME    = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME  || 'boc8bvoc'
 const API_KEY       = import.meta.env.VITE_CLOUDINARY_API_KEY     || ''
 const API_SECRET    = import.meta.env.VITE_CLOUDINARY_API_SECRET  || ''
 const UPLOAD_PRESET = 'upbeat_public'
-const VIDEO_PRESET  = import.meta.env.VITE_CLOUDINARY_PRESET_VIDEOS || 'upbeat_videos'
+// Gallery video uploads must use an UNSIGNED preset — 'upbeat_videos' is Signed
+// (locked to upbeatheart/videos folder) so it always returns 400 from the browser.
+// upbeat_public is unsigned and works for all gallery media (photos + videos).
+const VIDEO_PRESET  = 'upbeat_public'
 
 const CATEGORIES = [
   { value: 'clinic',      label: 'Clinic' },
@@ -149,6 +152,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
         status: 'pending',
       }))
       setFiles(prev => [...prev, ...mapped])
+      setUploadFolder('gallery/videos') // auto-select video folder
     }
 
     if (photos.length > 0) {
@@ -379,6 +383,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
                 <select value={uploadFolder} onChange={e => setUploadFolder(e.target.value)}
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
                   <option value="gallery">gallery (root)</option>
+                  <option value="gallery/videos">gallery/videos</option>
                   <option value="gallery/clinic">gallery/clinic</option>
                   <option value="gallery/health_camp">gallery/health_camp</option>
                   <option value="gallery/events">gallery/events</option>
