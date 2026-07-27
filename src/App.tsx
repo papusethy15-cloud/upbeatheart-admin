@@ -22,6 +22,7 @@ import LegalPage       from '@/pages/LegalPage'
 import DiseasesListPage from '@/pages/diseases/DiseasesListPage'
 import DiseaseEditorPage from '@/pages/diseases/DiseaseEditorPage'
 import ContactsPage     from '@/pages/ContactsPage'
+import NotificationsPage from '@/pages/NotificationsPage'
 
 const queryClient = new QueryClient()
 
@@ -86,7 +87,8 @@ export default function App() {
             <Route path="settings"     element={<SettingsPage />} />
             <Route path="team"         element={<TeamPage />} />
             <Route path="legal"        element={<LegalPage />} />
-            <Route path="contacts"     element={<ContactsPage />} />
+            <Route path="contacts"       element={<ContactsPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

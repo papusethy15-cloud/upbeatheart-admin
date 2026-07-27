@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   Heart, LayoutDashboard, Calendar, BookOpen, Megaphone,
   Building2, HandCoins, Star, Images, Settings, Stethoscope, Users, Scale,
-  MessageSquare,
+  MessageSquare, Bell,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
@@ -30,7 +30,8 @@ const navGroups = [
   {
     label: 'Operations',
     items: [
-      { to: '/contacts',  label: 'Contacts',     icon: MessageSquare },
+      { to: '/contacts',       label: 'Contacts',       icon: MessageSquare },
+      { to: '/notifications',  label: 'Notifications',  icon: Bell },
       { to: '/ngos',      label: 'NGO Partners', icon: Building2 },
       { to: '/donations', label: 'Donations',    icon: HandCoins },
       { to: '/team',      label: 'Team & Doctors', icon: Users },

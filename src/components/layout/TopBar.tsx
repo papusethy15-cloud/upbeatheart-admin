@@ -2,6 +2,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Bell, Search, LogOut, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 import toast from 'react-hot-toast'
 import GlobalSearch from './GlobalSearch'
 
@@ -19,15 +21,31 @@ const routeLabels: Record<string, string> = {
   gallery:      'Gallery',
   settings:     'Settings',
   team:         'Team & Doctors',
-  legal:        'Legal & FAQ',
+  legal:          'Legal & FAQ',
+  notifications:  'Notifications',
 }
 
 export default function TopBar() {
-  const { user, signOut } = useAuth()
+  const { user, firebaseUser, signOut } = useAuth()
   const navigate          = useNavigate()
   const { pathname }      = useLocation()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
+  const [unreadCount,  setUnreadCount]  = useState(0)
+
+  // Live unread notification count
+  useEffect(() => {
+    const uid = firebaseUser?.uid
+    if (!uid) return
+    const q = query(
+      collection(db, 'users', uid, 'notifications'),
+      orderBy('createdAt', 'desc'),
+    )
+    const unsub = onSnapshot(q, snap => {
+      setUnreadCount(snap.docs.filter(d => !d.data().read).length)
+    })
+    return unsub
+  }, [firebaseUser?.uid])
 
   // Build breadcrumb from path
   const segments    = pathname.split('/').filter(Boolean)
@@ -91,9 +109,17 @@ export default function TopBar() {
           </button>
 
           {/* Notification bell */}
-          <button className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-50 transition">
+          <button
+            onClick={() => navigate('/notifications')}
+            className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-50 transition"
+            title="Notifications"
+          >
             <Bell className="w-4 h-4 text-gray-500" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 border-2 border-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </button>
 
           {/* User avatar + dropdown */}
