@@ -11,7 +11,7 @@ import {
   AlertTriangle, RefreshCw, Cloud, LayoutGrid,
   Calendar, HardDrive, Tag, Loader2, ExternalLink,
   Upload, CheckCircle2, Search, Globe, Lock,
-  ZoomIn, Play
+  ZoomIn
 } from 'lucide-react'
 import { GalleryCropModal } from '@/components/upload/GalleryCropUpload'
 
@@ -69,42 +69,11 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-/**
- * FIX 1 — CORS: Use the Vite proxy path (/cloudinary-api) instead of the
- * direct api.cloudinary.com URL. The Vite dev server proxies /cloudinary-api
- * → https://api.cloudinary.com (no CORS). In production, the Nginx config for
- * admin.upbeatheart.com must also proxy /cloudinary-api → api.cloudinary.com
- * (see nginx note below). This avoids sending API credentials from the browser.
- */
+// Direct Cloudinary Admin API URL — works in both dev and production.
+// The Vite proxy only worked during `vite dev`; in production (static build
+// served by Nginx) it returns an HTML error page → "Unexpected token '<'" JSON parse failure.
 function cloudinaryApiUrl(path: string) {
-  return `/cloudinary-api${path}`
-}
-
-/**
- * FIX 3 — YouTube URL helper: extract video ID from any YouTube URL format.
- * Returns null if not a YouTube URL.
- */
-function getYouTubeId(url: string): string | null {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-  ]
-  for (const p of patterns) {
-    const m = url.match(p)
-    if (m) return m[1]
-  }
-  return null
-}
-
-/**
- * Detect media type from a URL string.
- * Returns 'video' for Cloudinary video paths, common video extensions, and YouTube.
- */
-function detectMediaType(url: string): 'photo' | 'video' {
-  const lc = url.toLowerCase()
-  if (getYouTubeId(url)) return 'video'
-  if (lc.includes('/video/') || /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/.test(lc)) return 'video'
-  return 'photo'
+  return `https://api.cloudinary.com${path}`
 }
 
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
@@ -135,12 +104,15 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
   const [uploadFolder, setUploadFolder] = useState('gallery')
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Crop modal state — stores ONE pending image file waiting to be cropped
   const [cropPending, setCropPending] = useState<{ file: File; objectUrl: string } | null>(null)
 
   const addFiles = (incoming: File[]) => {
+    // Separate photos (need crop) from videos (direct add)
     const photos = incoming.filter(f => f.type.startsWith('image/'))
     const videos = incoming.filter(f => f.type.startsWith('video/'))
 
+    // Videos go straight in
     if (videos.length > 0) {
       const mapped: UploadFile[] = videos.map(f => ({
         file: f,
@@ -151,10 +123,16 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
       setFiles(prev => [...prev, ...mapped])
     }
 
+    // Photos — show crop modal for the first one; remaining queued after
     if (photos.length > 0) {
+      // Queue all photos but open crop modal for index 0
+      // We store the raw file list; after each crop we pop the next
       const objectUrl = URL.createObjectURL(photos[0])
       setCropPending({ file: photos[0], objectUrl })
+      // If multiple photos, add subsequent ones directly (user cropped the main one)
       if (photos.length > 1) {
+        // For simplicity, subsequent photos also go through crop one at a time
+        // (each crop confirm triggers next via queue — simplified: add rest as pending)
         const rest: UploadFile[] = photos.slice(1).map(f => ({
           file: f,
           preview: URL.createObjectURL(f),
@@ -166,6 +144,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
     }
   }
 
+  /** Called when admin confirms the crop — receives cropped blob */
   const handleCropConfirm = (blob: Blob) => {
     if (!cropPending) return
     const croppedFile = new File([blob], cropPending.file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
@@ -198,8 +177,11 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
 
   const uploadFile = async (idx: number): Promise<string | null> => {
     const uf = files[idx]
-    // FIX 2a — detect resource type from actual file MIME, not from a shared state.
     const isVideo = uf.file.type.startsWith('video/')
+    // FIX 2: Use video-specific preset for video files.
+    // upbeat_public is image-only; using it for videos caused the first-attempt
+    // failure (Cloudinary returned an error) that cleared on retry because the
+    // browser cached the connection. Now we correctly use VIDEO_PRESET for videos.
     const resourceType = isVideo ? 'video' : 'image'
     const preset = isVideo ? VIDEO_PRESET : UPLOAD_PRESET
 
@@ -242,8 +224,6 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
         resolve(null)
       }
 
-      // Upload goes directly to Cloudinary upload endpoint (this is CORS-safe —
-      // Cloudinary explicitly allows browser uploads to their upload endpoint).
       xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`)
       xhr.send(fd)
     })
@@ -257,10 +237,11 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
       if (uploadTab === 'url') {
         finalUrl = urlInput.trim()
         if (!finalUrl) { toast.error('Please enter a URL'); setSaving(false); return }
-        // mediaType is already auto-detected from the URL onChange
       } else {
+        // check for pending files
         if (files.length === 0) { toast.error('Please select a file'); setSaving(false); return }
 
+        // Upload all pending
         for (let i = 0; i < files.length; i++) {
           if (files[i].status === 'pending') await uploadFile(i)
         }
@@ -269,35 +250,23 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
         if (done.length === 0) { toast.error('Upload failed'); setSaving(false); return }
         finalUrl = done[0].resultUrl!
 
+        // If multiple files, add each as separate gallery item
         if (done.length > 1) {
           for (const d of done) {
-            // FIX 2b — determine type from file MIME, not shared mediaType state
-            const itemType: 'photo' | 'video' = d.file.type.startsWith('video/') ? 'video' : 'photo'
             const ref = await addDoc(collection(db, 'gallery'), {
-              type: itemType,
+              type: d.file.type.startsWith('video/') ? 'video' : 'photo',
               url: d.resultUrl!,
               caption: caption || d.file.name.replace(/\.[^/.]+$/, ''),
               category,
               status: 'draft',
               createdAt: serverTimestamp()
             })
-            onAdded({ id: ref.id, type: itemType, url: d.resultUrl!, caption, category, status: 'draft' })
+            onAdded({ id: ref.id, type: d.file.type.startsWith('video/') ? 'video' : 'photo', url: d.resultUrl!, caption: caption, category, status: 'draft' })
           }
           toast.success(`${done.length} items added to gallery`)
           onClose()
           return
         }
-
-        // Single file — also detect from file MIME
-        const singleType: 'photo' | 'video' = files[0].file.type.startsWith('video/') ? 'video' : 'photo'
-        const ref = await addDoc(collection(db, 'gallery'), {
-          type: singleType, url: finalUrl, caption, category, status: 'draft', createdAt: serverTimestamp()
-        })
-        onAdded({ id: ref.id, type: singleType, url: finalUrl, caption, category, status: 'draft' })
-        toast.success('Added to gallery')
-        onClose()
-        setSaving(false)
-        return
       }
 
       const ref = await addDoc(collection(db, 'gallery'), {
@@ -312,10 +281,8 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
     setSaving(false)
   }
 
+  // allUploaded computed if needed
   const anyUploading = files.some(f => f.status === 'uploading')
-
-  // FIX 3 — compute youtube embed URL for preview in URL tab
-  const youtubeId = getYouTubeId(urlInput)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -353,6 +320,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
           {/* Upload tab */}
           {uploadTab === 'upload' && (
             <div className="space-y-4">
+              {/* Drop zone */}
               <div
                 onDragOver={e => { e.preventDefault(); setDragging(true) }}
                 onDragLeave={() => setDragging(false)}
@@ -374,6 +342,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
                 <p className="text-xs text-gray-400 mt-1.5">JPG, PNG, WebP, GIF, MP4, MOV · Multiple files supported</p>
               </div>
 
+              {/* Folder selector */}
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Upload Folder</label>
                 <select value={uploadFolder} onChange={e => setUploadFolder(e.target.value)}
@@ -386,6 +355,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
                 </select>
               </div>
 
+              {/* File list */}
               {files.length > 0 && (
                 <div className="space-y-2">
                   {files.map((uf, i) => (
@@ -393,25 +363,11 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
                       <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
                         {uf.file.type.startsWith('image/')
                           ? <img src={uf.preview} alt="" className="w-full h-full object-cover" />
-                          : (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 gap-0.5">
-                              <Video className="w-5 h-5 text-white/70" />
-                              <span className="text-[9px] text-white/50 font-medium">VIDEO</span>
-                            </div>
-                          )}
+                          : <div className="w-full h-full flex items-center justify-center"><Video className="w-5 h-5 text-gray-400" /></div>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-800 truncate">{uf.file.name}</p>
-                        {/* FIX 2c — show file type badge so admin can see image vs video */}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
-                            uf.file.type.startsWith('video/')
-                              ? 'bg-purple-100 text-purple-700'
-                              : 'bg-sky-100 text-sky-700')}>
-                            {uf.file.type.startsWith('video/') ? 'Video' : 'Image'}
-                          </span>
-                          <span className="text-xs text-gray-400">{formatBytes(uf.file.size)}</span>
-                        </div>
+                        <p className="text-xs text-gray-400">{formatBytes(uf.file.size)}</p>
                         {uf.status === 'uploading' && (
                           <div className="mt-1.5 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                             <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${uf.progress}%` }} />
@@ -442,17 +398,19 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Media URL</label>
-                <input
-                  placeholder="https://res.cloudinary.com/... or https://youtube.com/watch?v=..."
-                  value={urlInput}
+                <input placeholder="https://res.cloudinary.com/..." value={urlInput}
                   onChange={e => {
                     const val = e.target.value
                     setUrlInput(val)
-                    // FIX 2d + FIX 3 — auto-detect type including YouTube
-                    setMediaType(detectMediaType(val))
+                    // FIX 3: Auto-detect media type from the URL so admin doesn't
+                    // have to manually pick. Cloudinary video URLs contain /video/
+                    // or common video extensions.
+                    const lc = val.toLowerCase()
+                    const isVid = lc.includes('/video/') ||
+                      /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/.test(lc)
+                    setMediaType(isVid ? 'video' : 'photo')
                   }}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
@@ -470,29 +428,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
                   ))}
                 </div>
               </div>
-
-              {/* FIX 3 — YouTube embed preview */}
-              {urlInput && youtubeId && (
-                <div className="rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 aspect-video">
-                  <iframe
-                    src={`https://www.youtube.com/embed/${youtubeId}`}
-                    className="w-full h-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                    title="YouTube preview"
-                  />
-                </div>
-              )}
-
-              {/* Cloudinary video preview */}
-              {urlInput && !youtubeId && mediaType === 'video' && (
-                <div className="rounded-2xl overflow-hidden border border-gray-100 bg-gray-950 h-48 flex items-center justify-center">
-                  <video src={urlInput} controls className="max-h-full max-w-full" />
-                </div>
-              )}
-
-              {/* Image preview */}
-              {urlInput && !youtubeId && mediaType === 'photo' && (
+              {urlInput && mediaType === 'photo' && (
                 <div className="rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 h-40">
                   <img src={urlInput} alt="" className="w-full h-full object-cover"
                     onError={e => { (e.target as HTMLImageElement).style.opacity = '0.3' }} />
@@ -540,6 +476,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
         </div>
       </div>
 
+      {/* ── Crop modal — appears over the upload modal for photo files ── */}
       {cropPending && (
         <GalleryCropModal
           imgSrc={cropPending.objectUrl}
@@ -595,62 +532,6 @@ function AssetPreviewModal({ asset, onClose }: { asset: CloudinaryAsset; onClose
   )
 }
 
-// ─── Gallery Item Preview Modal ───────────────────────────────────────────────
-// FIX 2e — video gallery items now open in a modal player, not a new browser tab
-
-interface GalleryPreviewModalProps {
-  item: GalleryItem
-  onClose: () => void
-}
-
-function GalleryPreviewModal({ item, onClose }: GalleryPreviewModalProps) {
-  const youtubeId = getYouTubeId(item.url)
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <p className="font-semibold text-gray-900 text-sm truncate">{item.caption || 'Gallery Item'}</p>
-          <div className="flex items-center gap-2">
-            <a href={item.url} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-primary border border-primary/30 rounded-lg px-3 py-1.5 hover:bg-primary/5 transition">
-              <ExternalLink className="w-3.5 h-3.5" /> Open
-            </a>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition">
-              <X className="w-4 h-4 text-gray-500" />
-            </button>
-          </div>
-        </div>
-        <div className="bg-gray-950 flex items-center justify-center min-h-64 max-h-[72vh] overflow-hidden">
-          {item.type === 'photo' ? (
-            <img src={item.url} alt={item.caption} className="max-h-[70vh] max-w-full object-contain" />
-          ) : youtubeId ? (
-            <div className="w-full aspect-video">
-              <iframe
-                src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                title={item.caption}
-              />
-            </div>
-          ) : (
-            <video src={item.url} controls autoPlay className="max-h-[70vh] max-w-full" />
-          )}
-        </div>
-        <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-3 text-xs text-gray-500">
-          <span className={clsx('flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full',
-            item.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600')}>
-            {item.status === 'published' ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-            {item.status === 'published' ? 'Published' : 'Draft'}
-          </span>
-          <span className="capitalize">{item.category.replace('_', ' ')}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Delete Confirm ───────────────────────────────────────────────────────────
 
 function DeleteAssetModal({ asset, isUsed, onConfirm, onClose, deleting }: {
@@ -692,36 +573,18 @@ function DeleteAssetModal({ asset, isUsed, onConfirm, onClose, deleting }: {
 
 // ─── Gallery Item Card ────────────────────────────────────────────────────────
 
-function GalleryCard({ item, onPreview, onPublish, onDelete }: {
+function GalleryCard({ item, onPublish, onDelete }: {
   item: GalleryItem
-  onPreview: () => void
   onPublish: () => void
   onDelete: () => void
 }) {
-  const isYouTube = !!getYouTubeId(item.url)
-  const youtubeId = getYouTubeId(item.url)
-
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden group hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
       <div className="relative overflow-hidden">
         {item.type === 'photo' ? (
           <img src={item.url} alt={item.caption}
             className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-500"
-            onError={e => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" fill="%23f3f4f6"><rect width="400" height="200"/><text x="50%" y="50%" text-anchor="middle" fill="%239ca3af" font-size="14">Image</text></svg>' }} />
-        ) : isYouTube && youtubeId ? (
-          // YouTube thumbnail preview
-          <div className="relative w-full h-44 bg-gray-900 overflow-hidden">
-            <img
-              src={`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`}
-              alt={item.caption}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80"
-            />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center shadow-lg">
-                <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-              </div>
-            </div>
-          </div>
+            onError={e => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x200?text=Image' }} />
         ) : (
           <div className="w-full h-44 bg-gradient-to-br from-gray-800 to-gray-900 flex flex-col items-center justify-center gap-2">
             <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center">
@@ -742,14 +605,12 @@ function GalleryCard({ item, onPreview, onPublish, onDelete }: {
           </span>
         </div>
 
-        {/* Hover actions — FIX 2e: View button now opens modal, not new tab */}
+        {/* Hover actions */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end justify-between p-3">
-          <button
-            onClick={onPreview}
+          <a href={item.url} target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1.5 bg-white/90 text-gray-800 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white transition">
-            {item.type === 'video' ? <Play className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            {item.type === 'video' ? 'Play' : 'View'}
-          </button>
+            <Eye className="w-3.5 h-3.5" /> View
+          </a>
           <button onClick={onDelete}
             className="bg-red-500/90 text-white p-1.5 rounded-lg hover:bg-red-500 transition">
             <Trash2 className="w-3.5 h-3.5" />
@@ -796,16 +657,19 @@ function CloudinaryCard({ asset, isUsed, onPreview, onDelete }: {
           </div>
         )}
 
+        {/* In-use badge */}
         {isUsed && (
           <div className="absolute top-2 left-2 bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
             In Gallery
           </div>
         )}
 
+        {/* Format badge */}
         <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-sm">
           {asset.format.toUpperCase()}
         </div>
 
+        {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-200 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
           <button onClick={onPreview}
             className="bg-white/95 p-2 rounded-xl hover:bg-white transition shadow-lg" title="Preview">
@@ -866,10 +730,9 @@ export default function GalleryPage() {
   const [assetTypeFilter, setAssetTypeFilter] = useState<'all' | 'image' | 'video'>('all')
 
   // Modals
-  const [previewAsset, setPreviewAsset]   = useState<CloudinaryAsset | null>(null)
-  const [deleteAsset, setDeleteAsset]     = useState<CloudinaryAsset | null>(null)
-  const [deleting, setDeleting]           = useState(false)
-  const [previewItem, setPreviewItem]     = useState<GalleryItem | null>(null)  // FIX 2e
+  const [previewAsset, setPreviewAsset] = useState<CloudinaryAsset | null>(null)
+  const [deleteAsset, setDeleteAsset]   = useState<CloudinaryAsset | null>(null)
+  const [deleting, setDeleting]         = useState(false)
 
   // ── Load Firestore items ──
   useEffect(() => {
@@ -879,7 +742,7 @@ export default function GalleryPage() {
     })
   }, [])
 
-  // ── Load Cloudinary via proxy (FIX 1) ──
+  // ── Load Cloudinary via Vite proxy (fixes CORS) ──
   const loadCloudinaryAssets = useCallback(async () => {
     setLoadingAssets(true)
     setAssetError('')
@@ -892,8 +755,7 @@ export default function GalleryPage() {
         do {
           const params = new URLSearchParams({ max_results: '100' })
           if (cursor) params.set('next_cursor', cursor)
-          // FIX 1: Use /cloudinary-api proxy (works in dev via Vite proxy,
-          // works in production via Nginx proxy — see nginx config note below)
+          // Use Vite proxy path to avoid CORS
           const res = await fetch(
             cloudinaryApiUrl(`/v1_1/${CLOUD_NAME}/resources/${rt}?${params}`),
             { headers: { Authorization: auth } }
@@ -1015,18 +877,18 @@ export default function GalleryPage() {
         )}
       </div>
 
-      {/* ── Stats row ── */}
+      {/* ── Stats row (gallery tab only) ── */}
       {tab === 'gallery' && !loadingItems && (
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: 'Total Items',  value: items.length,     color: 'text-primary' },
-            { label: 'Published',    value: publishedCount,   color: 'text-green-700' },
-            { label: 'Photos',       value: photoCount,       color: 'text-sky-700' },
-            { label: 'Videos',       value: videoCount,       color: 'text-purple-700' },
+            { label: 'Total Items',  value: items.length,     color: 'bg-primary/10 text-primary' },
+            { label: 'Published',    value: publishedCount,   color: 'bg-green-50 text-green-700' },
+            { label: 'Photos',       value: photoCount,       color: 'bg-sky-50 text-sky-700' },
+            { label: 'Videos',       value: videoCount,       color: 'bg-purple-50 text-purple-700' },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
               <p className="text-xs text-gray-500 font-medium">{s.label}</p>
-              <p className={clsx('text-2xl font-bold mt-1', s.color)}>{s.value}</p>
+              <p className={clsx('text-2xl font-bold mt-1', s.color.split(' ')[1])}>{s.value}</p>
             </div>
           ))}
         </div>
@@ -1059,6 +921,7 @@ export default function GalleryPage() {
       {/* ═══════════════════════════════════════════════════════ GALLERY TAB */}
       {tab === 'gallery' && (
         <>
+          {/* Filter bar */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-48">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1104,7 +967,6 @@ export default function GalleryPage() {
             : <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredItems.map(item => (
                   <GalleryCard key={item.id} item={item}
-                    onPreview={() => setPreviewItem(item)}
                     onPublish={() => togglePublish(item)}
                     onDelete={() => handleDeleteItem(item.id)} />
                 ))}
@@ -1116,6 +978,7 @@ export default function GalleryPage() {
       {/* ═══════════════════════════════════════════════════ CLOUDINARY TAB */}
       {tab === 'cloudinary' && (
         <>
+          {/* Filter bar */}
           {!loadingAssets && !assetError && assets.length > 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-48">
@@ -1140,6 +1003,7 @@ export default function GalleryPage() {
             </div>
           )}
 
+          {/* Loading */}
           {loadingAssets && (
             <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
               <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -1150,6 +1014,7 @@ export default function GalleryPage() {
             </div>
           )}
 
+          {/* Error */}
           {!loadingAssets && assetError && (
             <div className="bg-white rounded-2xl border border-red-100 p-12 text-center">
               <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -1164,6 +1029,7 @@ export default function GalleryPage() {
             </div>
           )}
 
+          {/* Empty */}
           {!loadingAssets && !assetError && assets.length === 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center text-gray-400">
               <Cloud className="w-10 h-10 mx-auto mb-3 text-gray-200" />
@@ -1171,6 +1037,7 @@ export default function GalleryPage() {
             </div>
           )}
 
+          {/* Grid */}
           {!loadingAssets && !assetError && filteredAssets.length > 0 && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -1197,7 +1064,6 @@ export default function GalleryPage() {
           onAdded={item => setItems(prev => [item, ...prev])}
         />
       )}
-      {previewItem && <GalleryPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
       {previewAsset && <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />}
       {deleteAsset && (
         <DeleteAssetModal
