@@ -43,10 +43,11 @@ interface CloudinaryAsset {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CLOUD_NAME  = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME  || 'boc8bvoc'
-const API_KEY     = import.meta.env.VITE_CLOUDINARY_API_KEY     || ''
-const API_SECRET  = import.meta.env.VITE_CLOUDINARY_API_SECRET  || ''
+const CLOUD_NAME    = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME  || 'boc8bvoc'
+const API_KEY       = import.meta.env.VITE_CLOUDINARY_API_KEY     || ''
+const API_SECRET    = import.meta.env.VITE_CLOUDINARY_API_SECRET  || ''
 const UPLOAD_PRESET = 'upbeat_public'
+const VIDEO_PRESET  = import.meta.env.VITE_CLOUDINARY_PRESET_VIDEOS || 'upbeat_videos'
 
 const CATEGORIES = [
   { value: 'clinic',      label: 'Clinic' },
@@ -68,8 +69,11 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function cloudinaryProxy(path: string) {
-  return `/cloudinary-api${path}`
+// Direct Cloudinary Admin API URL — works in both dev and production.
+// The Vite proxy only worked during `vite dev`; in production (static build
+// served by Nginx) it returns an HTML error page → "Unexpected token '<'" JSON parse failure.
+function cloudinaryApiUrl(path: string) {
+  return `https://api.cloudinary.com${path}`
 }
 
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
@@ -174,7 +178,12 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
   const uploadFile = async (idx: number): Promise<string | null> => {
     const uf = files[idx]
     const isVideo = uf.file.type.startsWith('video/')
+    // FIX 2: Use video-specific preset for video files.
+    // upbeat_public is image-only; using it for videos caused the first-attempt
+    // failure (Cloudinary returned an error) that cleared on retry because the
+    // browser cached the connection. Now we correctly use VIDEO_PRESET for videos.
     const resourceType = isVideo ? 'video' : 'image'
+    const preset = isVideo ? VIDEO_PRESET : UPLOAD_PRESET
 
     setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'uploading', progress: 0 } : f))
 
@@ -182,7 +191,7 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
       const xhr = new XMLHttpRequest()
       const fd  = new FormData()
       fd.append('file', uf.file)
-      fd.append('upload_preset', UPLOAD_PRESET)
+      fd.append('upload_preset', preset)
       fd.append('folder', uploadFolder)
 
       xhr.upload.onprogress = (e) => {
@@ -390,11 +399,24 @@ function AddGalleryModal({ onClose, onAdded }: AddGalleryModalProps) {
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Media URL</label>
                 <input placeholder="https://res.cloudinary.com/..." value={urlInput}
-                  onChange={e => setUrlInput(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value
+                    setUrlInput(val)
+                    // FIX 3: Auto-detect media type from the URL so admin doesn't
+                    // have to manually pick. Cloudinary video URLs contain /video/
+                    // or common video extensions.
+                    const lc = val.toLowerCase()
+                    const isVid = lc.includes('/video/') ||
+                      /\.(mp4|mov|webm|avi|mkv|m4v)(\?|$)/.test(lc)
+                    setMediaType(isVid ? 'video' : 'photo')
+                  }}
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Media Type</label>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                  Media Type
+                  <span className="ml-2 text-gray-400 font-normal normal-case">(auto-detected · override if needed)</span>
+                </label>
                 <div className="flex gap-2">
                   {(['photo', 'video'] as const).map(t => (
                     <button key={t} onClick={() => setMediaType(t)}
@@ -735,7 +757,7 @@ export default function GalleryPage() {
           if (cursor) params.set('next_cursor', cursor)
           // Use Vite proxy path to avoid CORS
           const res = await fetch(
-            cloudinaryProxy(`/v1_1/${CLOUD_NAME}/resources/${rt}?${params}`),
+            cloudinaryApiUrl(`/v1_1/${CLOUD_NAME}/resources/${rt}?${params}`),
             { headers: { Authorization: auth } }
           )
           if (!res.ok) {
@@ -778,7 +800,7 @@ export default function GalleryPage() {
     try {
       const auth = 'Basic ' + btoa(`${API_KEY}:${API_SECRET}`)
       const res = await fetch(
-        cloudinaryProxy(`/v1_1/${CLOUD_NAME}/resources/${deleteAsset.resource_type}/upload`),
+        cloudinaryApiUrl(`/v1_1/${CLOUD_NAME}/resources/${deleteAsset.resource_type}/upload`),
         {
           method: 'DELETE',
           headers: { Authorization: auth, 'Content-Type': 'application/json' },
