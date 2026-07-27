@@ -58,8 +58,8 @@ async function uploadToBranding(file: File, onProgress?: (pct: number) => void):
 async function uploadVideoToCloudinary(file: File, onProgress?: (pct: number) => void): Promise<string> {
   const fd = new FormData()
   fd.append('file', file)
-  fd.append('upload_preset', 'upbeat_videos')
-  fd.append('folder', 'upbeatheart/videos')
+  fd.append('upload_preset', 'upbeat_public') // upbeat_videos is Signed → 400 from browser; upbeat_public is unsigned
+  fd.append('folder', 'upbeatheart/gallery/videos')
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`)
@@ -598,7 +598,7 @@ function DoctorVideoUpload({
       </div>
 
       <InfoBox>
-        Upload videos to Cloudinary under folder <strong>upbeatheart/videos</strong> using preset <strong>upbeat_videos</strong>.
+        Upload videos to Cloudinary under folder <strong>upbeatheart/gallery/videos</strong> using preset <strong>upbeat_public</strong>.
         For YouTube, paste the public or unlisted video URL above.
         The video autoplays (muted) when the section enters the viewport on the home page.
       </InfoBox>
@@ -1214,7 +1214,7 @@ export default function SettingsPage() {
           {[
             { folder: 'upbeatheart/public',   preset: 'upbeat_public',   type: 'Unsigned', color: 'text-emerald-600' },
             { folder: 'upbeatheart/patients', preset: 'upbeat_patients', type: 'Signed',   color: 'text-amber-600'  },
-            { folder: 'upbeatheart/videos',   preset: 'upbeat_videos',   type: 'Signed',   color: 'text-amber-600'  },
+            { folder: 'upbeatheart/videos',   preset: 'upbeat_videos',   type: 'Signed (backend only)',   color: 'text-amber-600'  },
             { folder: 'upbeatheart/branding', preset: 'upbeat_branding', type: 'Signed',   color: 'text-amber-600'  },
           ].map(({ folder, preset, type, color }, i, arr) => (
             <div key={folder} className={`grid grid-cols-3 px-4 py-3 ${i < arr.length - 1 ? 'border-b border-gray-50' : ''}`}>
