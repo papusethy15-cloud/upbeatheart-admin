@@ -21,7 +21,8 @@ import {
   ExternalLink, Facebook, Instagram, Youtube, Linkedin,
   Twitter, MessageCircle, Star, ChevronRight,
   Building2, GraduationCap, Stethoscope,
-  BarChart3, CreditCard, Calendar, Video, IndianRupee,
+  BarChart3, CreditCard, Calendar, Video, IndianRupee, ShieldAlert,
+  Layers, Landmark,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import LogoCropUpload from '@/components/upload/LogoCropUpload'
@@ -142,17 +143,20 @@ interface SiteSettings {
 
   // ── Home Page Section Visibility ────────────────────────────────────────────
   homeSections: {
-    hero:        boolean   // Hero banner (always recommended ON)
-    stats:       boolean   // Animated stats strip
-    video:       boolean   // Education video section
-    diseases:    boolean   // Diseases / treatments section
-    campaigns:   boolean   // Active patient campaigns
-    ngo:         boolean   // NGO partners section
-    blogs:       boolean   // Latest blogs preview
-    gallery:     boolean   // Gallery mosaic section
-    reviews:     boolean   // Patient reviews carousel
-    donate:      boolean   // Donate / payment section
-    appointment: boolean   // Appointment CTA section
+    hero:            boolean   // Hero banner (always recommended ON)
+    stats:           boolean   // Animated stats strip
+    govSchemes:      boolean   // Government schemes — Ayushman / CSI / RBSK / CGHS
+    video:           boolean   // Education video section
+    diseases:        boolean   // Diseases / treatments section
+    myths:           boolean   // CHD myths awareness section
+    cardiologyTypes: boolean   // Six cardiology sub-specialty cards
+    campaigns:       boolean   // Active patient campaigns
+    ngo:             boolean   // NGO partners section
+    blogs:           boolean   // Latest blogs preview
+    gallery:         boolean   // Gallery mosaic section
+    reviews:         boolean   // Patient reviews carousel
+    donate:          boolean   // Donate / payment section
+    appointment:     boolean   // Appointment CTA section
   }
 
   updatedAt?: any
@@ -189,17 +193,20 @@ const DEFAULTS: SiteSettings = {
   bankAccountName: '', bankAccountNumber: '', bankIfsc: '',
   bankName: '', bankBranch: '', chequePayableTo: '', donationNote: '',
   homeSections: {
-    hero:        true,
-    stats:       true,
-    video:       true,
-    diseases:    true,
-    campaigns:   true,
-    ngo:         true,
-    blogs:       true,
-    gallery:     true,
-    reviews:     true,
-    donate:      true,
-    appointment: true,
+    hero:            true,
+    stats:           true,
+    govSchemes:      true,
+    video:           true,
+    diseases:        true,
+    myths:           true,
+    cardiologyTypes: true,
+    campaigns:       true,
+    ngo:             true,
+    blogs:           true,
+    gallery:         true,
+    reviews:         true,
+    donate:          true,
+    appointment:     true,
   },
 }
 
@@ -212,17 +219,20 @@ async function loadSettings(): Promise<SiteSettings> {
     ...data,
     clinicHours: data.clinicHours ?? DEFAULT_HOURS,
     homeSections: {
-      hero:        data.homeSections?.hero        ?? true,
-      stats:       data.homeSections?.stats       ?? true,
-      video:       data.homeSections?.video       ?? true,
-      diseases:    data.homeSections?.diseases    ?? true,
-      campaigns:   data.homeSections?.campaigns   ?? true,
-      ngo:         data.homeSections?.ngo         ?? true,
-      blogs:       data.homeSections?.blogs       ?? true,
-      gallery:     data.homeSections?.gallery     ?? true,
-      reviews:     data.homeSections?.reviews     ?? true,
-      donate:      data.homeSections?.donate      ?? true,
-      appointment: data.homeSections?.appointment ?? true,
+      hero:            data.homeSections?.hero            ?? true,
+      stats:           data.homeSections?.stats           ?? true,
+      govSchemes:      data.homeSections?.govSchemes      ?? true,
+      video:           data.homeSections?.video           ?? true,
+      diseases:        data.homeSections?.diseases        ?? true,
+      myths:           data.homeSections?.myths           ?? true,
+      cardiologyTypes: data.homeSections?.cardiologyTypes ?? true,
+      campaigns:       data.homeSections?.campaigns       ?? true,
+      ngo:             data.homeSections?.ngo             ?? true,
+      blogs:           data.homeSections?.blogs           ?? true,
+      gallery:         data.homeSections?.gallery         ?? true,
+      reviews:         data.homeSections?.reviews         ?? true,
+      donate:          data.homeSections?.donate          ?? true,
+      appointment:     data.homeSections?.appointment     ?? true,
     },
   } as SiteSettings
 }
@@ -1086,17 +1096,20 @@ export default function SettingsPage() {
   }
 
   const SECTIONS: { key: keyof SiteSettings['homeSections']; label: string; desc: string; icon: any }[] = [
-    { key: 'hero',        label: 'Hero Banner',           desc: 'Full-screen hero with doctor photo and CTA buttons',       icon: Star },
-    { key: 'stats',       label: 'Stats Strip',           desc: 'Animated counters — patients, years, campaigns, NGOs',     icon: BarChart3 },
-    { key: 'video',       label: 'Education Video',       desc: 'Patient education video section',                          icon: Video },
-    { key: 'diseases',    label: 'Diseases & Treatments', desc: 'Categorised disease library with browse cards',            icon: Stethoscope },
-    { key: 'campaigns',   label: 'Patient Campaigns',     desc: 'Active patient assistance campaigns with donate CTAs',     icon: MessageCircle },
-    { key: 'ngo',         label: 'NGO Partners',          desc: 'NGO directory preview and partnership CTA',                icon: Building2 },
-    { key: 'blogs',       label: 'Latest Blogs',          desc: 'Three most recent published blog posts',                   icon: GraduationCap },
-    { key: 'gallery',     label: 'Gallery',               desc: 'Photo & video mosaic grid from the gallery collection',    icon: ImageIcon },
-    { key: 'reviews',     label: 'Patient Reviews',       desc: 'Auto-scroll carousel of published patient testimonials',   icon: Star },
-    { key: 'donate',      label: 'Donate Section',        desc: 'Donation payment options (also controlled by Donations tab)', icon: IndianRupee },
-    { key: 'appointment', label: 'Appointment CTA',       desc: 'Full-width call-to-action strip with booking button',     icon: Calendar },
+    { key: 'hero',            label: 'Hero Banner',           desc: 'Full-screen hero with doctor photo and CTA buttons',               icon: Star },
+    { key: 'stats',           label: 'Stats Strip',           desc: 'Animated counters — patients, years, campaigns, NGOs',             icon: BarChart3 },
+    { key: 'govSchemes',      label: 'Government Schemes',    desc: 'Ayushman Bharat / CSI / RBSK / CGHS — affordability showcase',     icon: Landmark },
+    { key: 'video',           label: 'Education Video',       desc: 'Patient education video section',                                 icon: Video },
+    { key: 'diseases',        label: 'Diseases & Treatments', desc: 'Categorised disease library with browse cards',                   icon: Stethoscope },
+    { key: 'myths',           label: 'CHD Myths',             desc: 'Congenital heart disease myth-awareness cards',                   icon: ShieldAlert },
+    { key: 'cardiologyTypes', label: 'Types of Cardiology',   desc: 'Six sub-specialty cards — general, interventional, EP, preventive, paediatric, imaging', icon: Layers },
+    { key: 'campaigns',       label: 'Patient Campaigns',     desc: 'Active patient assistance campaigns with donate CTAs',            icon: MessageCircle },
+    { key: 'ngo',             label: 'NGO Partners',          desc: 'NGO directory preview and partnership CTA',                       icon: Building2 },
+    { key: 'blogs',           label: 'Latest Blogs',          desc: 'Three most recent published blog posts',                          icon: GraduationCap },
+    { key: 'gallery',         label: 'Gallery',               desc: 'Photo & video mosaic grid from the gallery collection',           icon: ImageIcon },
+    { key: 'reviews',         label: 'Patient Reviews',       desc: 'Auto-scroll carousel of published patient testimonials',          icon: Star },
+    { key: 'donate',          label: 'Donate Section',        desc: 'Donation payment options (also controlled by Donations tab)',     icon: IndianRupee },
+    { key: 'appointment',     label: 'Appointment CTA',       desc: 'Full-width call-to-action strip with booking button',             icon: Calendar },
   ]
 
   const renderSections = () => (
